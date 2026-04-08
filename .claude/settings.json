@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node \"C:\\Users\\zengp\\Desktop\\fixguard\\src\\cli.js\" hook",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}
