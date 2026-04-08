@@ -626,6 +626,16 @@ the design stays coherent.
   signal quality (denies are high-intent) but means patterns can only
   form once AI has actually attacked scars. Early in a project's
   lifecycle, pattern discovery is slow.
+- **"New-file-alongside-fix" edge case:** a fix commit that also
+  introduces a new helper file (even if the actual bug-fix is 3
+  lines elsewhere) scores in the `largeDiff` band because the
+  total line delta includes all lines of the new file. This crashed
+  fixguard's own self-application in April 2026 — a legitimate fix
+  commit scored 0.40 (just below threshold) because it was bundled
+  with a newly-created 260-line file. Workaround today: commit the
+  new file separately from the fix. Real solution: add a signal
+  that distinguishes "net new content" from "modified existing
+  content" when computing diff size.
 - **Resolved and removed:** performance (was 54 s, now 6 s after
   single-pass git log + parallel blame — see §11).
 
