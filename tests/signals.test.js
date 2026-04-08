@@ -170,6 +170,51 @@ test('scoreCommit: large feat-with-sub-fix is filtered by combined penalty', () 
     `large feat-with-fix should be filtered, got ${score}`);
 });
 
+// ── REGRESSION: "fix + new test file" should not trip largeDiff ──────
+// Discovered during fixguard self-application on 2026-04-09. A real fix
+// commit that bundled a 113-line regression test file with a 4-line
+// check.js modification scored 0.40 because totalDelta > 100 and the
+// old logic treated new-file content as "large refactor." With the
+// modified-delta-only size bucket, the same commit scores cleanly.
+test('scoreCommit: fix + new test file uses modification delta only', () => {
+  const commit = {
+    sha: 'a',
+    date: '2026-04-09T01:15:24Z',
+    subject: 'fix: archived scars leaked into commit-time check',
+    filesChanged: ['src/check.js', 'tests/check-archived.test.js'],
+    // Back-compat total:
+    linesAdded: 117, linesDeleted: 0,
+    // New breakdown:
+    modifiedLinesAdded: 4,     // the actual fix in check.js
+    modifiedLinesDeleted: 0,
+    newFileLinesAdded: 113,    // the brand-new test file
+    addedLines: [
+      '      if (s.archived) continue;',
+      '  // respect weight-based archival',
+    ],
+  };
+  const { score, signals } = scoreCommit(commit, [commit]);
+  assert.equal(signals.smallDiff, 0.15, 'modified portion is small → smallDiff');
+  assert.ok(!signals.largeDiff, 'must not penalize as large refactor');
+  assert.equal(signals.cleanFixKeyword, 0.40);
+  assert.equal(signals.testCoChange, 0.15);
+  assert.ok(score >= SCAR_THRESHOLD, `expected ≥ ${SCAR_THRESHOLD}, got ${score}`);
+});
+
+// Ensure the fallback path (no breakdown provided) still works correctly —
+// old test cases that predate the new-file tracking must keep passing.
+test('scoreCommit: commits without new-file breakdown fall back to total delta', () => {
+  const commit = {
+    sha: 'a', date: '2026-04-08T14:00:00Z', subject: 'fix: tight fix',
+    filesChanged: ['src/a.js'],
+    linesAdded: 5, linesDeleted: 2,
+    // no modifiedLinesAdded / newFileLinesAdded → fallback path
+    addedLines: ['  if (!x) throw new Error("bad")'],
+  };
+  const { signals } = scoreCommit(commit, [commit]);
+  assert.equal(signals.smallDiff, 0.15);
+});
+
 // Make sure the combined penalty does NOT affect clean large fixes
 test('scoreCommit: clean large security fix still passes', () => {
   const commit = {

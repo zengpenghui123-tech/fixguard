@@ -84,25 +84,53 @@ function listAllCommits(cwd) {
 }
 
 // Parse a single commit's diff block from a `git log -p` stream.
-// Returns { filesChanged, linesAdded, linesDeleted, addedLines }.
+// Tracks TWO kinds of added content separately:
+//   - modifiedLinesAdded: lines added to EXISTING files (true edits)
+//   - newFileLinesAdded:  lines that arrived as part of brand-new files
+//
+// This separation prevents the "fix commit alongside a new test file"
+// edge case from tripping the largeDiff penalty. A 4-line bug fix that
+// also adds a 100-line regression test should still be scored as a
+// small targeted fix, not a 104-line refactor. See DESIGN.md §9 for
+// the incident that motivated this breakdown.
 function parseDiffBlock(diffText) {
   const filesChanged = [];
-  let linesAdded = 0;
-  let linesDeleted = 0;
+  let modifiedLinesAdded = 0;
+  let modifiedLinesDeleted = 0;
+  let newFileLinesAdded = 0;
   const addedLines = [];
+  let currentIsNewFile = false;
 
   for (const line of diffText.split('\n')) {
-    if (line.startsWith('+++ b/')) {
+    if (line.startsWith('diff --git')) {
+      currentIsNewFile = false; // reset on every file boundary
+    } else if (line.startsWith('new file mode')) {
+      currentIsNewFile = true;
+    } else if (line.startsWith('+++ b/')) {
       filesChanged.push(line.slice(6));
     } else if (line.startsWith('+') && !line.startsWith('+++')) {
-      linesAdded++;
+      if (currentIsNewFile) {
+        newFileLinesAdded++;
+      } else {
+        modifiedLinesAdded++;
+      }
       if (addedLines.length < 200) addedLines.push(line.slice(1));
     } else if (line.startsWith('-') && !line.startsWith('---')) {
-      linesDeleted++;
+      if (!currentIsNewFile) modifiedLinesDeleted++;
     }
   }
 
-  return { filesChanged, linesAdded, linesDeleted, addedLines };
+  return {
+    filesChanged,
+    // Back-compat aggregates (still summed for scoreCommit fallback path)
+    linesAdded: modifiedLinesAdded + newFileLinesAdded,
+    linesDeleted: modifiedLinesDeleted,
+    // New breakdown used by the size-bucket logic
+    modifiedLinesAdded,
+    modifiedLinesDeleted,
+    newFileLinesAdded,
+    addedLines,
+  };
 }
 
 // Single-pass commit analysis using `git log -p` narrowed by --grep.
@@ -159,6 +187,9 @@ function analyzeAllCommits(cwd, opts = {}) {
       filesChanged: diffStats.filesChanged,
       linesAdded: diffStats.linesAdded,
       linesDeleted: diffStats.linesDeleted,
+      modifiedLinesAdded: diffStats.modifiedLinesAdded,
+      modifiedLinesDeleted: diffStats.modifiedLinesDeleted,
+      newFileLinesAdded: diffStats.newFileLinesAdded,
       addedLines: diffStats.addedLines,
     };
 

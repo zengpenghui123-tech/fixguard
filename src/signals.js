@@ -122,7 +122,17 @@ function scoreCommit(commit, allCommits) {
   const subject = commit.subject || '';
   const filesChanged = commit.filesChanged || [];
   const addedLines = commit.addedLines || [];
-  const totalLineDelta = (commit.linesAdded || 0) + (commit.linesDeleted || 0);
+
+  // Prefer the modification-only delta when a new-file breakdown is
+  // available. This prevents a legitimate fix that also adds a
+  // regression test file from being penalized as "large refactor."
+  // See DESIGN.md §9 (new-file-alongside-fix edge case).
+  const hasBreakdown = typeof commit.modifiedLinesAdded === 'number';
+  const modifiedDelta = hasBreakdown
+    ? (commit.modifiedLinesAdded || 0) + (commit.modifiedLinesDeleted || 0)
+    : (commit.linesAdded || 0) + (commit.linesDeleted || 0);
+  const newFileDelta = commit.newFileLinesAdded || 0;
+  const totalLineDelta = modifiedDelta + newFileDelta;
 
   const signals = {};
 
@@ -138,14 +148,27 @@ function scoreCommit(commit, allCommits) {
   if (hasNoise) signals.noisePenalty = -0.20;
 
   // ── Diff size signal ───────────────────────────────────────────────
-  const isLarge = totalLineDelta >= 200;
-  if (totalLineDelta > 0 && totalLineDelta < 30)        signals.smallDiff = 0.15;
-  else if (totalLineDelta >= 30 && totalLineDelta < 100) signals.mediumDiff = 0.05;
-  else if (isLarge)                                      signals.largeDiff = -0.20;
+  // Size buckets are keyed on MODIFIED delta (changes to existing files),
+  // not total delta. A tight 4-line fix alongside a new 100-line test
+  // file is still a small fix, not a medium/large one.
+  const isLarge = modifiedDelta >= 200;
+  if (modifiedDelta > 0 && modifiedDelta < 30)            signals.smallDiff = 0.15;
+  else if (modifiedDelta >= 30 && modifiedDelta < 100)    signals.mediumDiff = 0.05;
+  else if (isLarge)                                        signals.largeDiff = -0.20;
+
+  // Special case: pure new-file commit (no modifications at all). Such
+  // commits get no size signal — their score relies on keyword intent
+  // + test co-change + guard shape. This handles the "fix delivered as
+  // brand-new guard helper file" pattern honestly.
+  if (modifiedDelta === 0 && newFileDelta > 0 && !signals.smallDiff) {
+    signals.pureNewFile = 0; // explicit marker (no contribution), for debugging
+  }
 
   // ── Combined penalty: a feat/refactor labeled commit with a large diff
   //    is almost always a feature, even if "fix" appears as a sub-bullet.
-  //    Targeted at mixed-keyword + large-diff false positives.
+  //    Targeted at mixed-keyword + large-diff false positives. Uses the
+  //    same modifiedDelta basis so a feat commit bundled with new files
+  //    is only penalized if its ACTUAL modifications are large.
   if (signals.mixedFixKeyword && isLarge) {
     signals.mixedLargeFalsePositive = -0.25;
   }
