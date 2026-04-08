@@ -21,7 +21,8 @@ Usage:
   fixguard sleep                 Run consolidation cycle, write dream report
   fixguard check [--staged]      Check if changes touch protected regions or scars
   fixguard hook                  Claude Code PreToolUse hook (reads JSON on stdin)
-  fixguard events [--limit N]    Show recent hook/scan events from the blood log
+  fixguard events [--limit N] [--type T]
+                                 Show recent hook/scan events from the blood log
   fixguard status                One-screen health check across all layers
   fixguard list                  Print all protected regions (JSON)
 
@@ -56,7 +57,9 @@ async function main() {
       case 'events': {
         const limitIdx = args.indexOf('--limit');
         const limit = limitIdx >= 0 ? parseInt(args[limitIdx + 1], 10) || 30 : 30;
-        const events = readEvents(process.cwd(), { limit });
+        const typeIdx = args.indexOf('--type');
+        const type = typeIdx >= 0 ? args[typeIdx + 1] : undefined;
+        const events = readEvents(process.cwd(), type ? { limit, type } : { limit });
         if (events.length === 0) {
           console.log('fixguard: no events yet. (Blood log is empty.)');
           return;

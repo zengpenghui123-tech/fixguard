@@ -28,6 +28,7 @@ function summarizeEventsSince(cwd, sinceMs) {
     scansTriggered: 0,
     mostDeniedFiles: new Map(),
     mostSurfacedFiles: new Map(),
+    mostBypassedFiles: new Map(),
   };
   for (const e of events) {
     switch (e.type) {
@@ -41,6 +42,7 @@ function summarizeEventsSince(cwd, sinceMs) {
         break;
       case 'hook.bypassed':
         summary.bypassed++;
+        if (e.file) summary.mostBypassedFiles.set(e.file, (summary.mostBypassedFiles.get(e.file) || 0) + 1);
         break;
       case 'hook.stale_map':
         summary.staleMap++;
@@ -52,6 +54,12 @@ function summarizeEventsSince(cwd, sinceMs) {
   }
   return summary;
 }
+
+// Files bypassed ≥ BYPASS_ESCALATION_THRESHOLD times since last sleep are
+// surfaced as warnings in the dream report — the scars protecting them
+// are likely outdated. Weights.js is already eroding them automatically;
+// this surface just tells the user what the system noticed.
+const BYPASS_ESCALATION_THRESHOLD = 3;
 
 function topN(map, n) {
   return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
@@ -195,6 +203,19 @@ async function sleep(cwd) {
     }
     if (blood.bypassed > 0) {
       console.log(`    ${YEL('⚠')}  ${blood.bypassed} time(s) FIXGUARD_BYPASS was used`);
+      // Escalate: any file repeatedly bypassed is probably guarding something
+      // that's no longer relevant. Weights.js is already decaying it, but
+      // flag it for the user too.
+      const repeatedBypass = [...blood.mostBypassedFiles.entries()]
+        .filter(([_, n]) => n >= BYPASS_ESCALATION_THRESHOLD)
+        .sort((a, b) => b[1] - a[1]);
+      if (repeatedBypass.length) {
+        console.log('');
+        console.log(`    ${YEL('⚠⚠')} ${BOLD('Repeatedly bypassed files')} — scars here may be outdated:`);
+        for (const [file, n] of repeatedBypass) {
+          console.log(`       ${file}  ${DIM(`(${n}× bypassed — scar weights auto-decaying)`)}`);
+        }
+      }
     }
     if (blood.staleMap > 0) {
       console.log(`    ${DIM(`${blood.staleMap} hook call(s) saw a stale scar map — consider running \`fixguard scars\` more often`)}`);

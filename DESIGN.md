@@ -751,3 +751,107 @@ answer to a specific concern that arose during that second pass.*
 self-application. If future sessions add layers without updating
 this file, fixguard's own memory has failed — exactly the failure
 mode the whole project exists to prevent.*
+
+## 12. Self-application log
+
+This section records real events where fixguard was applied to itself.
+It exists because the project only has credibility if its own source
+tree is under its own protection. Every entry below happened on the
+actual git history of this repository.
+
+### 12.1 2026-04-09 — first full self-hosting
+
+**Event:** fixguard became its own first user.
+
+**Context:** After finishing the v1.1 learning ring (weights + patterns +
+events + status), the question was whether fixguard could protect its
+own repository. Two things had to work:
+1. `fixguard scars` had to find real fix commits in fixguard's own
+   history (not just external projects like AlphaClaw).
+2. `fixguard init` had to install Claude Code + pre-commit hooks that
+   then actually blocked attempts to edit scarred lines in this tree.
+
+**What happened:**
+
+1. Committed two groups: `feat: v1.0 MVP + v1.1 learning ring`
+   (bulk work) and `fix: archived scars leaked into commit-time check`
+   (an isolated fix commit that should score as a scar source).
+
+2. First self-scan attempt returned **0 scars**. The fix commit scored
+   0.40 — just below the 0.50 threshold — because the test file
+   accompanying the fix was bundled into the same commit, tipping
+   `totalLineDelta` over 200 and triggering `largeDiff: -0.20`.
+
+3. This was a real detector edge case: a targeted fix + its own new
+   regression test looks structurally like "refactor" to the naive
+   total-line-delta check. Diagnosed in ~30 seconds by dumping the
+   signal breakdown of every candidate commit.
+
+4. **Fix:** added new-file vs modified-file tracking to
+   `parseDiffBlock` in `scars.js`, and changed `scoreCommit` to use
+   `modifiedDelta` (changes to existing files) as the basis for the
+   size bucket. A new regression test for "fix + new test file"
+   pattern was added to `signals.test.js` to lock the behaviour.
+
+5. Re-committed as `fix: size bucket must use modification delta, not
+   total delta`. This commit itself is a fix commit — and fixguard now
+   detects it. The fix that made fixguard better became a scar
+   protecting the code that does the detecting.
+
+6. Ran `fixguard init` on the repo. Verified:
+   - `.git/hooks/pre-commit` installed
+   - `.claude/settings.json` installed with PreToolUse matcher
+     `Read|Edit|Write|MultiEdit`
+   - `.fixguardrc.json` written
+
+7. Ran the end-to-end meta test: synthesized a Claude Code
+   `PreToolUse` payload requesting an `Edit` to delete the line
+   `if (s.archived) continue;` in `src/check.js`. Fed it to
+   `fixguard hook` via stdin. **Got `permissionDecision: deny` with
+   a reason referencing commit `ca2bd9f` — the original archived-scar
+   fix.**
+
+8. Committed the init state with message
+   `meta: self-apply fixguard to fixguard`. The commit ran through the
+   pre-commit hook automatically and got `✓ no protected regions
+   touched` because it only added config files, no source edits.
+
+**Final state after this event:**
+
+- 6 commits in repository history
+- 2 commits recognized by fixguard as real fix sources
+- 15 scar regions across `src/check.js`, `src/scars.js`, `src/signals.js`,
+  and their tests
+- Claude Code PreToolUse hook active on this repo
+- Pre-commit hook active on this repo
+- Self-scan runtime: ~0.7 s (30 files, 6 commits)
+
+**Lessons captured:**
+
+- The "new-file-alongside-fix" edge case is now documented in §9 and
+  fixed in the detector. This is the cleanest possible demonstration
+  of the §8.1 principle: **feedback is algorithm improvement, not data
+  curation**. The bug was caught by reality, the fix was a new signal,
+  the fix is now protected by the thing it improved.
+- The complete loop works: fixguard detects its own fixes, fixguard
+  protects itself against editing those fixes, fixguard's commit of
+  that protection passed its own pre-commit hook. No external
+  validation needed — the tool verified itself end-to-end.
+- This is the strongest form of "eat your own dog food" the project
+  can achieve without external users: the code that protects projects
+  is protecting the code that protects projects.
+
+**Commits of record:**
+```
+dec5864 meta: self-apply fixguard to fixguard
+120909f fix: size bucket must use modification delta, not total delta
+93f5f9c docs: document new-file-alongside-fix edge case found during self-application
+ca2bd9f fix: archived scars leaked into commit-time check
+79a5520 feat: v1.0 MVP + v1.1 learning ring
+37e8f5c init: fixguard project scaffold
+```
+
+Future self-application events should be appended as §12.2, §12.3, etc.
+Each entry should answer: what was tried, what broke, what the fix was,
+and what the final state looked like. This log is a memory the project
+keeps about itself.
