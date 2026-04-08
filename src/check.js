@@ -33,11 +33,14 @@ async function check({ staged = true, force = false, cwd }) {
   const cfg = loadConfig(cwd);
   const violations = [];
 
-  // Load auto-detected scar map (if `fixguard scars` or `fixguard sleep` has been run)
+  // Load auto-detected scar map (if `fixguard scars` or `fixguard sleep` has been run).
+  // loadScarMap enriches each scar with weight/archived state, so we skip
+  // archived scars here — matching hook.js behavior.
   const scarMap = loadScarMap(cwd);
   const scarsByFile = new Map();
   if (scarMap && Array.isArray(scarMap.scars)) {
     for (const s of scarMap.scars) {
+      if (s.archived) continue; // respect weight-based archival
       if (!scarsByFile.has(s.file)) scarsByFile.set(s.file, []);
       scarsByFile.get(s.file).push(s);
     }
