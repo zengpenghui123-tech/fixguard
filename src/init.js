@@ -4,10 +4,20 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const HOOK_MARKER = '# fixguard-managed';
-const HOOK_BODY = `#!/bin/sh
+
+// Build the pre-commit hook body with a resolution chain that tries the
+// absolute path to THIS installation first — so fixguard working on its
+// own repository (or any repo where the user hasn't npm-linked) still
+// actually runs the check instead of silently skipping. The absolute
+// path is injected at install time and persists in the hook script.
+function hookBody() {
+  const cliAbs = path.resolve(__dirname, 'cli.js').replace(/\\/g, '/');
+  return `#!/bin/sh
 ${HOOK_MARKER}
 # Installed by \`fixguard init\`. Remove this file to disable.
-if command -v fixguard >/dev/null 2>&1; then
+if [ -f "${cliAbs}" ]; then
+  node "${cliAbs}" check --staged
+elif command -v fixguard >/dev/null 2>&1; then
   fixguard check --staged
 elif [ -f node_modules/.bin/fixguard ]; then
   node_modules/.bin/fixguard check --staged
@@ -17,6 +27,7 @@ else
   }
 fi
 `;
+}
 
 // Build the Node command that Claude Code will shell out to for hooks.
 // We use the absolute path to this installation's cli.js so the hook works
@@ -53,7 +64,7 @@ function installGitHook(cwd) {
       console.log('fixguard: appended check to existing pre-commit hook.');
     }
   } else {
-    fs.writeFileSync(hookPath, HOOK_BODY);
+    fs.writeFileSync(hookPath, hookBody());
     try { fs.chmodSync(hookPath, 0o755); } catch { /* windows */ }
     console.log(`fixguard: installed pre-commit hook → ${path.relative(cwd, hookPath)}`);
   }
