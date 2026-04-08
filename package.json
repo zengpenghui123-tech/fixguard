@@ -1,0 +1,14 @@
+{
+  "name": "fixguard",
+  "version": "0.1.0",
+  "description": "Stop AI coding assistants from silently reverting your hard-won bug fixes",
+  "bin": {
+    "fixguard": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test tests/**/*.test.js"
+  },
+  "keywords": ["ai", "claude", "copilot", "cursor", "bugfix", "git-hook", "developer-tools"],
+  "license": "MIT",
+  "author": "Eason Zeng"
+}
