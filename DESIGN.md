@@ -591,18 +591,113 @@ worst case is "AI no longer warned about scars for this session" — not
 "AI cannot edit any file." This is the only design that survives
 contact with real workflows.
 
-### 8.4 Why the project metaphor stuck
+### 8.4 Why the biological metaphor is load-bearing (three layers)
+
 For most of the design conversation we used biological language
 deliberately: blood, hippocampus, sleep, eye, scar. Several times we
 considered switching to plain engineering language and dropping the
-metaphor. We didn't, because every time we tried, we discovered the
-metaphor was carrying actual constraints we'd otherwise have missed
-— the sleep cycle, the fail-open principle, scar tissue as "memory
-embodied in executable code." The metaphor is load-bearing.
+metaphor. We didn't, because the metaphor turns out to carry weight on
+**three independent layers** — and each layer does something the other
+two cannot do alone.
 
-If you are tempted to refactor this codebase to remove biological terms,
-read this section first. The terms are not decoration; they are how
-the design stays coherent.
+**Layer 1 — Engineering constraint carrier**
+
+Every time we tried to describe the architecture in neutral terms, a
+specific design constraint disappeared. "Sleep cycle" forced us to
+think about consolidation as a *phase* with an explicit trigger, not
+as continuous background work. "Fail-open" became obvious once we
+framed it as "a numb limb is safer than a seizure." "Scar tissue as
+executable code" made it clear that memory shouldn't be metadata *about*
+code — it IS code that exists precisely because it was added in
+response to a past wound. Drop the metaphor and you drop the
+constraints it encodes.
+
+**Layer 2 — Human communication**
+
+Biological terms are memorable and coherent in a way dry technical
+terms aren't. "Scar" vs "protected region" — one sticks, one doesn't.
+A new contributor reading the dream report's "reinforced / eroded /
+archived" is instantly oriented; the same information as "score_delta
++0.05 / -0.15 / state_transition=inactive" would require a second pass.
+This layer is aesthetic but not trivial: tools that feel coherent get
+used, tools that feel bureaucratic get abandoned.
+
+**Layer 3 — AI language-model prior activation** *(added 2026-04-09)*
+
+This is the subtlest and strongest layer. The words "scar," "wound,"
+"heal," "bleed," "blood," and "hippocampus" carry **billions of tokens
+of pretraining weight** from medical, surgical, biological, and
+neurological corpora. When fixguard injects `additionalContext` into
+an AI's perception channel containing "this is a scar region from a
+past fix," the AI's language model **already knows** — from its prior
+training — that scars:
+
+- exist because of healed damage, not random accumulation
+- are functionally different from healthy tissue
+- should not be removed casually
+- carry implicit stories about past incidents
+- are the kind of thing a careful practitioner respects
+
+We didn't have to *tell* the AI any of this. The word does the work.
+If we had named the same concept `protected_region_4fe4288d`, the AI
+would see a neutral identifier and rely entirely on the explicit rules
+in the context. With `scar`, it brings its own priors to bear.
+
+This is a form of **prompt engineering by vocabulary choice**. It is
+almost free (one word instead of another), but it biases AI behaviour
+in a direction that would otherwise require explicit, token-expensive
+instructions.
+
+**Why this layer matters for the three primary fixguard surfaces:**
+
+- **AI-facing context injection** (hook.js additionalContext):
+  **Use biological terms maximally.** "scar region," "wound," "bleed,"
+  "heal," "archived." Every word here is a prior activator.
+- **Human-facing CLI output** (scars/status/explain commands):
+  **Use biological terms alongside concrete specifics.** Humans get
+  coherence from the metaphor AND ground truth from the commit message
+  + actual code + line number. Both work.
+- **Documentation and code comments** (DESIGN.md, README, source):
+  **Use biological terms to name concepts, engineering terms for the
+  implementation details underneath.** `sleep.js` is the file, but
+  inside it you still see `Promise`, `fs.writeFile`, `JSON.parse`.
+  Don't fight the engineering substrate; just name the layer with the
+  biological word.
+
+**Why this layer is hard to see until you've built the system:**
+
+You only notice it in the gap between "I wrote explicit rules for AI
+behaviour" and "AI just behaves that way without being told." That
+gap is where the prior is doing the work. The first time we noticed
+this was after implementing the hook output — we tested fixguard on
+a real Claude Code session and it started being more cautious than the
+rules strictly required, because the word "scar" in the injected
+context was activating medical-reasoning priors we hadn't written.
+
+**Lessons encoded here for future additions:**
+
+- When adding a new layer, pick a biological name first and an
+  engineering name second. See if the biological name **generates**
+  design constraints the engineering name would have missed.
+- When writing AI-facing output, **prefer words with strong
+  pretraining priors** over invented technical terms. "Blood log" >
+  "event stream." "Dream report" > "consolidation summary."
+  "Recurring pain" > "high-activity files."
+- When deleting biological language, **ask whether you are also
+  deleting a prior activation**. If yes, the refactor has a hidden
+  cost that shows up as "AI behaves worse after the rename."
+- The CLI output in `sleep.js` uses phrases like "memory dynamics"
+  and "scars reinforced / eroded / archived / unarchived" precisely
+  because those words are themselves injected into the dream report
+  markdown, which AI sessions will later read. This is not accidental
+  — the dream report is **secondary AI context**, and it is written
+  in prior-activating language on purpose.
+
+If you are tempted to refactor this codebase to remove biological
+terms, read this section first. The terms are not decoration; they
+are three load-bearing mechanisms stacked on one another, and the
+third one (AI prior activation) is the one you can't see from the
+source tree alone.
 
 ## 9. Known limitations
 
