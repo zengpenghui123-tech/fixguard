@@ -9,12 +9,15 @@ const { reviewCommand } = require('./review');
 const { runHook } = require('./hook');
 const { readEvents } = require('./events');
 const { statusCommand } = require('./status');
+const { explainCommand } = require('./explain');
+const { bootstrap } = require('./bootstrap');
 
 const VERSION = require('../package.json').version;
 
 const HELP = `fixguard v${VERSION} — protect bug fixes from AI assistants
 
 Usage:
+  fixguard bootstrap             ★ One-command install (init + commit + scan)
   fixguard init                  Install git pre-commit hook in current repo
   fixguard scan [path]           Scan for @fix markers, write FIXES.md
   fixguard scars                 Auto-detect scar tissue from git history
@@ -24,6 +27,7 @@ Usage:
   fixguard events [--limit N] [--type T]
                                  Show recent hook/scan events from the blood log
   fixguard status                One-screen health check across all layers
+  fixguard explain <file>        Explain (in plain language) all scars in one file
   fixguard list                  Print all protected regions (JSON)
 
 Marker syntax (any comment style: // # -- /* */ <!-- -->):
@@ -44,6 +48,11 @@ async function main() {
     switch (cmd) {
       case 'init':
         return await init(process.cwd());
+      case 'bootstrap':
+        return await bootstrap(process.cwd(), {
+          skipScan: args.includes('--skip-scan'),
+          skipCommit: args.includes('--skip-commit'),
+        });
       case 'scan':
         return await scan(args[0] || process.cwd());
       case 'scars':
@@ -54,6 +63,8 @@ async function main() {
         return await runHook();
       case 'status':
         return statusCommand(process.cwd());
+      case 'explain':
+        return explainCommand(process.cwd(), args[0]);
       case 'events': {
         const limitIdx = args.indexOf('--limit');
         const limit = limitIdx >= 0 ? parseInt(args[limitIdx + 1], 10) || 30 : 30;

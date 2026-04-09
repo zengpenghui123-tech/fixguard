@@ -6,31 +6,37 @@
 
 ## Try it in 60 seconds
 
-If you've never used fixguard before, here's the shortest possible walkthrough.
-Everything writes to a local `.fixguard/` directory — your source code is never
-modified.
+One command sets up everything:
 
 ```bash
 cd your-project                   # any git repo with some "fix:" commits in it
-fixguard init                     # installs two hooks: git pre-commit + Claude Code
+fixguard bootstrap                # ★ install + auto-commit + scan, all at once
 ```
 
-> **⚠ Husky users: commit the hook change immediately.** If your project uses
-> Husky, fixguard appends its check to `.husky/pre-commit`, which is a
-> git-tracked file. If you don't commit that change, the next `git stash` /
-> `git checkout` / rebase will silently revert it and protection vanishes
-> without warning. Run this right after `fixguard init`:
->
-> ```bash
-> git add .husky/pre-commit
-> git commit -m "chore: install fixguard pre-commit hook"
-> ```
->
-> Projects without Husky don't need this — `fixguard init` writes to
-> `.git/hooks/pre-commit` which isn't tracked by git and is stable on its own.
+That's it. `bootstrap` does four things in order:
+
+1. **Installs hooks** — git pre-commit hook + Claude Code PreToolUse hook
+2. **Auto-commits** the hook changes (so they survive `git stash` / `checkout` / rebase)
+3. **Scans your git history** for real bug fixes and generates the scar map
+4. **Confirms protection is live** and tells you how to inspect it
+
+Only the files fixguard creates or modifies are staged — **your unrelated
+uncommitted work is never touched**. Your source code is never modified either;
+scars live in a local `.fixguard/` directory that's automatically added to
+`.gitignore`.
+
+> **Note on Husky projects:** `bootstrap` detects Husky automatically and
+> appends fixguard's check to `.husky/pre-commit` (the tracked file), then
+> commits it. If you don't use Husky, it writes to `.git/hooks/pre-commit`
+> (untracked) and skips the hook-file commit step entirely.
+
+Manual alternative (if you want to control each step yourself):
 
 ```bash
-fixguard scars                    # looks at git history, finds real bug fixes
+fixguard init                     # install only, no commit, no scan
+git add .husky/pre-commit         # commit the hook yourself (Husky projects)
+git commit -m "chore: install fixguard"
+fixguard scars                    # scan git history
 ```
 
 You should see something like:
