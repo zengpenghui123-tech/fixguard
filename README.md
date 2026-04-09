@@ -387,6 +387,32 @@ Mix your language with the English defaults using `|`:
 fixguard handles CJK word boundaries correctly — `修复` will match inside
 `修复登录bug` without needing spaces around it.
 
+## Compatibility
+
+| AI Tool | Protection Level | What works |
+|---|---|---|
+| **Claude Code** | ★★★ Full | PreToolUse hook (read → inject warning, edit → deny, write → block) + git pre-commit |
+| **Cursor** | ★★ Commit-level | git pre-commit blocks violations. AI does not receive proactive scar warnings during editing |
+| **GitHub Copilot** | ★★ Commit-level | Same — pre-commit catches it before history |
+| **Windsurf / Cline / Aider** | ★★ Commit-level | Same |
+| **Any editor (no AI)** | ★★ Commit-level | pre-commit hook fires for everyone |
+
+**Why the difference:** Claude Code is currently the only AI coding tool
+that exposes a `PreToolUse` hook — the ability to intercept a tool call
+*before* it executes and inject context or deny it. Other tools don't
+have this interface (yet), so fixguard can only catch violations at
+commit time rather than edit time.
+
+**Planned adapters:**
+- Cursor `.cursorrules` integration (inject scar warnings into Cursor's rule system)
+- MCP memory server (universal scar query tool for any MCP-compatible client)
+- Other tools as they open hook APIs
+
+Commit-level protection is still meaningful: even without the real-time
+warning, the AI's edit gets caught the moment the developer tries to
+`git commit`. The fix is still protected — the developer just gets the
+feedback later in the workflow.
+
 ## Works well for / needs tuning for
 
 fixguard is built on assumptions about git history and commit conventions.
