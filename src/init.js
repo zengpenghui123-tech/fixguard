@@ -41,7 +41,25 @@ function hookCommand() {
   return `node "${cliPath}" hook`;
 }
 
-function installGitHook(cwd) {
+// Detect the real pre-commit hook location.
+//
+// Git lets a project override the default `.git/hooks/` via
+// `core.hooksPath`. The most common use of this is **Husky**, which
+// sets the hooks path to `.husky/_` (Husky 9+) or `.husky/` (older
+// Husky) and keeps its hook scripts alongside the project source so
+// they can be version-controlled.
+//
+// If we blindly write to `.git/hooks/pre-commit` on a Husky project,
+// git will IGNORE our hook entirely — it only runs the path configured
+// in core.hooksPath. This was a real compatibility bug discovered while
+// validating fixguard on a real AlphaClaw-style project on 2026-04-09.
+//
+// Strategy:
+//   1. Read `core.hooksPath` if set. If it points at `.husky/_` or
+//      similar, the "real" Husky hook lives at `<cwd>/.husky/pre-commit`
+//      (the PARENT of `.husky/_`, because Husky runs the outer file).
+//   2. Otherwise, fall back to `<git-dir>/hooks/pre-commit`.
+function resolvePreCommitPath(cwd) {
   let gitDir;
   try {
     gitDir = execSync('git rev-parse --git-dir', { cwd, encoding: 'utf8' }).trim();
@@ -50,24 +68,67 @@ function installGitHook(cwd) {
   }
   if (!path.isAbsolute(gitDir)) gitDir = path.join(cwd, gitDir);
 
-  const hooksDir = path.join(gitDir, 'hooks');
-  fs.mkdirSync(hooksDir, { recursive: true });
-  const hookPath = path.join(hooksDir, 'pre-commit');
+  // Detect Husky via core.hooksPath
+  let hooksPathConfig = '';
+  try {
+    hooksPathConfig = execSync('git config --get core.hooksPath', {
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch { /* not set */ }
+
+  if (hooksPathConfig) {
+    // Normalize: Husky sets `.husky/_` (9+) or just `.husky` (older).
+    // In both cases the user-visible hook file is `.husky/pre-commit`
+    // (the OUTER file, not the one in the `_` subdirectory — that's
+    // Husky's own bootstrap wrapper).
+    const huskyHook = path.join(cwd, '.husky', 'pre-commit');
+    if (fs.existsSync(path.dirname(huskyHook))) {
+      return { path: huskyHook, kind: 'husky', hooksPathConfig };
+    }
+    // Non-Husky custom hooks path: honor it directly
+    const customHook = path.isAbsolute(hooksPathConfig)
+      ? path.join(hooksPathConfig, 'pre-commit')
+      : path.join(cwd, hooksPathConfig, 'pre-commit');
+    return { path: customHook, kind: 'custom', hooksPathConfig };
+  }
+
+  // Default: .git/hooks/pre-commit
+  return { path: path.join(gitDir, 'hooks', 'pre-commit'), kind: 'default' };
+}
+
+function installGitHook(cwd) {
+  const resolved = resolvePreCommitPath(cwd);
+  const hookPath = resolved.path;
+  fs.mkdirSync(path.dirname(hookPath), { recursive: true });
+
+  // Build the fixguard-check line we need to inject
+  const cliAbs = path.resolve(__dirname, 'cli.js').replace(/\\/g, '/');
+  const fixguardLine = `node "${cliAbs}" check --staged || exit 1`;
 
   if (fs.existsSync(hookPath)) {
     const existing = fs.readFileSync(hookPath, 'utf8');
     if (existing.includes(HOOK_MARKER)) {
-      console.log('fixguard: pre-commit hook already installed.');
-    } else {
-      const append = `\n${HOOK_MARKER}\nfixguard check --staged || exit 1\n`;
-      fs.appendFileSync(hookPath, append);
-      console.log('fixguard: appended check to existing pre-commit hook.');
+      console.log(`fixguard: pre-commit hook already installed (${resolved.kind}).`);
+      return;
     }
-  } else {
-    fs.writeFileSync(hookPath, hookBody());
+    // Existing hook — append fixguard check at the end. Husky and other
+    // hook chains run top-to-bottom; appending means we run after their
+    // existing checks, which is fine because all we need is ONE chance
+    // to block the commit before git finalizes it.
+    const appended = existing.replace(/\s*$/, '') +
+      `\n\n${HOOK_MARKER}\n${fixguardLine}\n`;
+    fs.writeFileSync(hookPath, appended);
     try { fs.chmodSync(hookPath, 0o755); } catch { /* windows */ }
-    console.log(`fixguard: installed pre-commit hook → ${path.relative(cwd, hookPath)}`);
+    const where = path.relative(cwd, hookPath);
+    console.log(`fixguard: appended check to existing ${resolved.kind} pre-commit hook → ${where}`);
+    return;
   }
+
+  // No existing hook — create a fresh one using the standard template
+  fs.writeFileSync(hookPath, hookBody());
+  try { fs.chmodSync(hookPath, 0o755); } catch { /* windows */ }
+  const where = path.relative(cwd, hookPath);
+  console.log(`fixguard: installed ${resolved.kind} pre-commit hook → ${where}`);
 }
 
 // Merge fixguard's Claude Code hook entry into the project's .claude/settings.json
