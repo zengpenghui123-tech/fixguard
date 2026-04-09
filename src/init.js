@@ -202,4 +202,12 @@ async function init(cwd) {
   console.log('  · Bypass (logged): set FIXGUARD_BYPASS=1 before the session');
 }
 
-module.exports = { init, installGitHook, installClaudeCodeHook, hookCommand };
+module.exports = {
+  init,
+  installGitHook,
+  installClaudeCodeHook,
+  hookCommand,
+  resolvePreCommitPath,
+  hookBody,
+  HOOK_MARKER,
+};

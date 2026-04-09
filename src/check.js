@@ -36,7 +36,7 @@ async function check({ staged = true, force = false, cwd }) {
   const scarsByFile = new Map();
   if (scarMap && Array.isArray(scarMap.scars)) {
     for (const s of scarMap.scars) {
-      if (s.archived) continue; // respect weight-based archival
+      if (s.archived) continue; // respect weight-based archival (matches hook.js)
       if (!scarsByFile.has(s.file)) scarsByFile.set(s.file, []);
       scarsByFile.get(s.file).push(s);
     }
