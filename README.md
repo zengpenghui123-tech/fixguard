@@ -104,6 +104,81 @@ how this generation of AI assistants relate to code:
 No smarter model will fix this. The information has to live somewhere the
 AI **must** see it, every time, without depending on its memory.
 
+## What is a "scar"
+
+You spend 4 hours tracking down a bug. You find it — JWT validation is
+missing an `iat` check. You add 3 lines of code to fix it. You commit.
+
+Those 3 lines are a **scar**.
+
+They aren't feature code — they don't exist to "do something." They exist
+to **prevent something bad from happening again.** Like a scar on skin:
+it's different from the surrounding tissue. Harder. More sensitive. It
+*remembers* the wound.
+
+Your git history is full of scars — dozens or hundreds of lines added
+during late-night debugging sessions, post-incident hotfixes, and careful
+security patches. Each one is a piece of defensive code your team bled for.
+
+**The problem: AI doesn't know any of this.** It opens your file, sees an
+"unnecessary if check," decides the code "could be cleaner," and deletes
+your scar. It doesn't know those 3 lines represent 4 hours of debugging
+and 1 production incident.
+
+**fixguard finds every scar in your git history and makes sure no AI can
+silently remove them.**
+
+<p align="center">
+  <img src="docs/before-after.png" alt="Without fixguard vs With fixguard" width="700">
+</p>
+
+<p align="center">
+  <img src="docs/architecture.png" alt="fixguard architecture — three rings" width="500">
+</p>
+
+## How it works
+
+fixguard organizes protection into three concentric rings:
+
+### Static Ring — detect scars from git history
+
+Every commit in your repo is scored against 7 independent signals:
+fix-keywords in the subject, diff size, guard-clause shape, test
+co-change, revert proximity, commit timing, and new-file vs modification
+ratio. Commits scoring above 0.50 become "scar sources." `git blame` maps
+each surviving line back to its birth commit — if that commit is a scar
+source, the line is protected. Delete `scars.json` and regenerate it
+identically. This ring is a pure function of your git history.
+
+### Runtime Ring — protect on every AI action
+
+Two enforcement points, zero gaps:
+- **hook.js** intercepts every Claude Code `Read/Edit/Write` via
+  PreToolUse. Reading a scarred file injects a warning into the AI's
+  system context. Editing a scarred line is denied with the original
+  commit message as the reason. Writing over a scarred file is blocked
+  entirely.
+- **check.js** runs as a git pre-commit hook (Husky-compatible). If the
+  AI somehow bypassed the hook, the commit itself gets caught.
+
+Every decision — deny, allow-with-context, bypass — is logged to
+`events.jsonl`, the blood log.
+
+### Learning Ring — self-correct over time
+
+`fixguard sleep` reads the blood log and adjusts per-scar weights:
+- Scars that get **blocked** (AI tried to delete, hook denied) → weight
+  increases → reinforced
+- Scars that get **bypassed** (`FIXGUARD_BYPASS=1`) → weight decreases
+  → eroding
+- Quiet scars slowly decay → natural forgetting
+- Weight below 0.30 → **auto-archived**, no longer injected
+
+Cross-scar patterns emerge when two scars are blocked together in multiple
+sessions — a signal of structural coupling worth refactoring. The learning
+ring feeds back into the static ring: `weights.json` enriches `scars.json`
+on every load, so hook and check always see the same unified view.
+
 ## What fixguard does
 
 fixguard treats your `git log` as the source of truth about what counts
