@@ -210,15 +210,11 @@ relevant ones into your AI's perception path before every action.
 ## Install
 
 ```bash
-git clone <this repo>
-cd fixguard
-npm link          # or add src/cli.js to your PATH
+npm install -g fixguard-cli
 ```
 
-> **Status:** v1.1, not yet published to npm. Self-applied to its own
-> repository (this directory is protected by fixguard). Ready to install
-> on real projects, but expect tuning as the algorithm meets more
-> codebases.
+> **Status:** v1.1.0, published on [npm](https://www.npmjs.com/package/fixguard-cli). Self-applied to its own
+> repository (this directory is protected by fixguard).
 
 ## Quick start
 
