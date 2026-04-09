@@ -4,6 +4,7 @@ const path = require('path');
 const { parseFile, loadConfig, DEFAULT_IGNORE } = require('./markers');
 const { getStagedChanges, getStagedDeletions, rangesOverlap, git } = require('./diff');
 const { loadScarMap } = require('./scars');
+const { appendEvent } = require('./events');
 
 const RED = s => `\x1b[31m${s}\x1b[0m`;
 const YELLOW = s => `\x1b[33m${s}\x1b[0m`;
@@ -11,12 +12,7 @@ const BOLD = s => `\x1b[1m${s}\x1b[0m`;
 const DIM = s => `\x1b[2m${s}\x1b[0m`;
 
 async function check({ staged = true, force = false, cwd }) {
-  // Bypass paths
-  if (force || process.env.FIXGUARD_BYPASS === '1') {
-    console.error(YELLOW('fixguard: BYPASS active — protected regions NOT checked.'));
-    console.error(YELLOW('          Make sure you read FIXES.md before doing this.'));
-    return;
-  }
+  const bypassActive = force || process.env.FIXGUARD_BYPASS === '1';
 
   // Verify we're in a git repo
   try { git('rev-parse --git-dir', cwd); }
@@ -119,6 +115,28 @@ async function check({ staged = true, force = false, cwd }) {
     seen.add(k);
     return true;
   });
+
+  // ─── Bypass path: violations exist but user set FIXGUARD_BYPASS ───
+  // Emit one hook.bypassed event per UNIQUE violated file so that
+  // sleep.js → weights.js can erode the scars for each file the
+  // bypass effectively covered. Without this, commit-time bypasses
+  // would not flow into the learning ring, breaking the symmetry with
+  // hook.js-time bypasses.
+  if (bypassActive) {
+    console.error(YELLOW('fixguard: BYPASS active — protected regions NOT checked.'));
+    console.error(YELLOW(`          ${uniq.length} violation(s) silently overridden.`));
+    console.error(YELLOW('          This is audited — run `fixguard events` to see the bypass log.'));
+    const filesBypassed = new Set(uniq.map(v => v.file));
+    for (const file of filesBypassed) {
+      appendEvent(cwd, {
+        type: 'hook.bypassed',
+        tool: 'git-commit',
+        file,
+        reason: 'FIXGUARD_BYPASS=1 at commit time',
+      });
+    }
+    return;
+  }
 
   console.error(RED(BOLD(`\n✗ fixguard: ${uniq.length} protected region(s) touched\n`)));
   for (const v of uniq) {
