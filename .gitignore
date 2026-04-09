@@ -1,2 +1,16 @@
-node_modules/\n.env\ndist/
+node_modules/
+.env
+.env.*
+dist/
+build/
+out/
+coverage/
+.DS_Store
+*.log
+
+# fixguard local state — learned per-project, not distributed
 .fixguard/
+
+# Claude Code per-user config — `fixguard init` generates this on
+# each user's own machine, never commit
+.claude/

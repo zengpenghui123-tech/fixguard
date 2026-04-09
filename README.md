@@ -42,25 +42,25 @@ fixguard scars                    # scan git history
 You should see something like:
 
 ```
-fixguard: scanned 197 file(s), 274 fix-commit(s) → 573 scar region(s)
+fixguard: scanned 184 file(s), 212 fix-commit(s) → 438 scar region(s)
 
 Top scarred files:
-  static/index.js  (149 scars)
-  routes/chat.js   (52 scars)
+  src/core/engine.js   (94 scars)
+  src/api/handlers.js  (46 scars)
   ...
 
 What this means:
-  Your git history has 274 commits that look like real bug fixes.
-  Those fixes added 573 lines of code that are now protected.
+  Your git history has 212 commits that look like real bug fixes.
+  Those fixes added 438 lines of code that are now protected.
   If an AI (or a human) tries to delete any of those lines, fixguard will intervene.
 
-  Example: static/settings.js line 20
-  was added in commit 4fe4288 with the message:
-    "fix: language persistence bug - back button + ac_lang/alphaclaw_lang sync"
+  Example: src/api/handlers.js line 42
+  was added in commit a1b2c3d with the message:
+    "fix: jwt claim validation edge case on refresh"
   From now on, any Claude Code session trying to delete that line will be blocked.
 ```
 
-**That's the whole pitch**: those 573 lines are the places your team bled for.
+**That's the whole pitch**: those 438 lines are the places your team bled for.
 fixguard now protects them from silent AI overwrites.
 
 Want to see what's protected in a specific file?
@@ -177,10 +177,11 @@ A commit becomes a scar source only when its total crosses **0.50**.
 No single signal can carry the decision alone — the strongest one is
 `+0.40`, and must be supplemented by at least one more.
 
-**Validated on a real 1,500-commit repo (AlphaClaw):** 80 unique commits
-cross the threshold, producing 481 scar regions across 197 files. The top
-ten are all textbook production bugs (jwt iat bypass, iOS touchend, JWT
-regression, language persistence, etc). Zero manual triage.
+**Validated on a real ~1,500-commit production web app:** ~80 unique
+commits cross the threshold, producing hundreds of scar regions across
+a few hundred files. The top ten are all textbook production bugs
+(JWT validation, mobile touch handling, auth token lifecycle, i18n
+edge cases, etc). Zero manual triage.
 
 ## The learning ring
 
@@ -381,4 +382,4 @@ new layer.
 
 ## License
 
-MIT © Eason Zeng
+MIT © Eason Zhen

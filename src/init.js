@@ -51,8 +51,9 @@ function hookCommand() {
 //
 // If we blindly write to `.git/hooks/pre-commit` on a Husky project,
 // git will IGNORE our hook entirely — it only runs the path configured
-// in core.hooksPath. This was a real compatibility bug discovered while
-// validating fixguard on a real AlphaClaw-style project on 2026-04-09.
+// in core.hooksPath. This was a real compatibility bug discovered
+// while validating fixguard against a real Husky-based production
+// project on 2026-04-09.
 //
 // Strategy:
 //   1. Read `core.hooksPath` if set. If it points at `.husky/_` or
@@ -203,10 +204,11 @@ async function init(cwd) {
   // will silently revert it and fixguard protection vanishes without
   // any warning. We MUST tell the user to commit the change.
   //
-  // This was discovered during live validation on an AlphaClaw project
-  // on 2026-04-09: the first commit attempt appeared to succeed because
-  // a prior `git stash` had already erased the fixguard line from
-  // .husky/pre-commit without anyone noticing. See DESIGN.md §12.2.
+  // This was discovered during live validation on a real Husky-based
+  // production project on 2026-04-09: the first commit attempt appeared
+  // to succeed because a prior `git stash` had already erased the
+  // fixguard line from .husky/pre-commit without anyone noticing.
+  // See DESIGN.md §12.2.
   if (gitHook && gitHook.isTracked && gitHook.modified) {
     const hookRel = path.relative(cwd, gitHook.path).replace(/\\/g, '/');
     console.log('');

@@ -174,12 +174,12 @@ single signal can carry the decision alone (the strongest, "clean fix
 keyword in subject", is 0.40 — must be supplemented by at least one more).
 
 **Why multi-signal:** an earlier version used a single heuristic (`grep
-the commit subject for fix-keywords`). It produced 878 scars on
-AlphaClaw, of which roughly one in six came from a single false positive
-("feat: Sentry monitoring, ... fix free-count route"). The single-keyword
-approach is structurally unable to distinguish a feat-with-side-fix from
-a real fix. Multi-signal scoring resolves this without requiring human
-triage.
+the commit subject for fix-keywords`). It produced hundreds of scars on
+a reference project. Roughly one in six came from a single false positive
+— a feat commit with a sub-bullet fix ("feat: large feature, fix: small
+edge case"). The single-keyword approach is structurally unable to
+distinguish a feat-with-side-fix from a real fix. Multi-signal scoring
+resolves this without requiring human triage.
 
 **Signals (current weights):**
 
@@ -202,11 +202,11 @@ triage.
 
 **Threshold:** 0.50.
 
-**Validated against AlphaClaw:** 80 unique commits cross the threshold,
+**Validated against a reference production project:** 80 unique commits cross the threshold,
 producing 481 scar regions across 197 files. Score distribution is
 roughly bell-shaped with a peak in the 0.70–0.79 band. The top ten
 highest-confidence commits are all real production bugs (jwt iat bypass,
-iOS touchend, language persistence, etc).
+mobile touch events, auth token lifecycle, etc).
 
 ### 6.2 `src/scars.js` — the scar detector ("eye")
 **Purpose:** combine signals + `git blame` to find which lines of the
@@ -531,8 +531,8 @@ forgetting issue at a meta level.
 *Resolution (v1.1):* `hook.js` now ranks scars by
 `confidence × recency-decay` with a configurable half-life (default
 180 days), and injects only the top N per file (default 5, via
-`maxScarsPerInjection`). A file with 149 scars (AlphaClaw's
-`static/index.js`) injects ≈ 5 ranked scars plus a short note
+`maxScarsPerInjection`). A file with 149 scars (observed in one
+heavy file of our reference project) injects ≈ 5 ranked scars plus a short note
 `"144 more not shown — showing top 5 by confidence + recency"`. For
 Edit events that don't overlap any scar, a separate proximity-based
 ranking shows the nearest 3 scars to the edit target instead of an
@@ -639,7 +639,7 @@ training — that scars:
 - are the kind of thing a careful practitioner respects
 
 We didn't have to *tell* the AI any of this. The word does the work.
-If we had named the same concept `protected_region_4fe4288d`, the AI
+If we had named the same concept `protected_region_abc1234`, the AI
 would see a neutral identifier and rely entirely on the explicit rules
 in the context. With `scar`, it brings its own priors to bear.
 
@@ -757,7 +757,7 @@ made in a second pass:
   Replaced with a single `git log -p --grep=...` pass, parsed once.
 - `git blame` was serial across all tracked files. Now runs in parallel
   with bounded concurrency (default 8 workers).
-- Combined effect on AlphaClaw: **54 s → 6 s**.
+- Combined effect on a reference production project: **54 s → 6 s**.
 
 ### 11.2 Configuration (single source of truth)
 - New `src/config.js` loads `.fixguardrc.json` and returns a merged
@@ -835,10 +835,10 @@ made in a second pass:
 ---
 
 *This document was first written at the close of a long design
-conversation between Eason Zeng and an instance of Claude on
+conversation between Eason Zhen and an instance of Claude on
 2026-04-08. The v1.1 additions documented here were made in a second
 session on 2026-04-09, after the core architecture had survived
-contact with real usage on the AlphaClaw repo and several new
+contact with real usage on a reference project and several new
 structural needs became visible. Each subsection above is the
 answer to a specific concern that arose during that second pass.*
 
@@ -862,7 +862,7 @@ actual git history of this repository.
 events + status), the question was whether fixguard could protect its
 own repository. Two things had to work:
 1. `fixguard scars` had to find real fix commits in fixguard's own
-   history (not just external projects like AlphaClaw).
+   history (not just external reference projects).
 2. `fixguard init` had to install Claude Code + pre-commit hooks that
    then actually blocked attempts to edit scarred lines in this tree.
 
@@ -946,38 +946,38 @@ ca2bd9f fix: archived scars leaked into commit-time check
 37e8f5c init: fixguard project scaffold
 ```
 
-### 12.2 2026-04-09 — live validation on a real Husky project (AlphaClaw)
+### 12.2 2026-04-09 — live validation on a real Husky project
 
 **Event:** fixguard graduated from its own repo (§12.1) to a real
 third-party project for the first time.
 
 **Context:** After the learning ring was complete and 87 tests were
 green, the question became "does this actually work on a real project
-I don't control?" AlphaClaw, a 254 MB production web app that uses
-Husky + ESLint in its pre-commit chain, was the target. A full backup
-(`alphaclaw-website-backup-20260409`) was taken first.
+I don't control?" Our reference project — a ~250 MB production web
+app using Husky + ESLint in its pre-commit chain — was the target.
+A full backup was taken before any writes.
 
 **What happened:**
 
-1. `fixguard init` on the live AlphaClaw directory. It correctly
+1. `fixguard init` on the live target directory. It correctly
    detected Husky via `core.hooksPath=.husky/_`, appended its check
    line to the **outer** `.husky/pre-commit` (not the `_/pre-commit`
    bootstrap wrapper), and created `.claude/settings.json` and
    `.fixguardrc.json`.
 
-2. `fixguard scars` ran in 7.6 seconds and found 573 protected
-   regions across 197 files, headSha matching current HEAD. Top
-   scarred files all matched the user's own memory of which files
-   he had bled on: `static/index.js` (149), `routes/chat.js`,
-   `routes/auth.js`, `static/settings.js`.
+2. `fixguard scars` ran in under 10 seconds and found ~600 protected
+   regions across ~200 files, headSha matching current HEAD. Top
+   scarred files all matched the developer's own memory of which
+   files they had bled on: a large front-end entry-point file held
+   ~150 scars, backend API handlers and auth modules held the rest.
 
 3. `fixguard status` confirmed `✓ healthy`, 0 archived, blood log
    initialized.
 
-4. **End-to-end commit-block test:** modified
-   `static/settings.js:20-23` (a real scar — the "language
-   persistence fix — back button" commit from `4fe4288d`), staged
-   it, and ran `git commit -m "refactor: simplify settings.js"`.
+4. **End-to-end commit-block test:** modified a known scarred
+   region (a real 4-line fix for an i18n edge case, born in a
+   past bug-fix commit), staged it, and ran
+   `git commit -m "refactor: simplify that module"`.
 
 5. **The commit went through.** Exit 0. HEAD advanced. No fixguard
    output anywhere in the hook chain.
@@ -1008,8 +1008,8 @@ ephemeral until committed.
 - `git reset --soft HEAD~1` rewound the bad commit (hard reset
   failed because SQLite WAL files were locked).
 - `git restore --staged` unstaged the violation.
-- `git checkout -- static/settings.js` restored the original.
-- AlphaClaw's HEAD returned to `9ec186fe` with zero lost work.
+- `git checkout --` restored the original file.
+- The target's HEAD returned to its pre-test state with zero lost work.
 - `git stash drop` removed the temporary validation stash, leaving
   the user's two pre-existing stashes untouched.
 
@@ -1029,18 +1029,17 @@ ephemeral until committed.
 **Re-validation:**
 
 After the fix, the same modification-of-a-scar test was repeated
-on live AlphaClaw **without the intermediate stash**. The commit
-was correctly blocked:
+**without the intermediate stash**. The commit was correctly blocked:
 
 ```
 ✗ fixguard: 1 protected region(s) touched
-  static/settings.js:20-23  [scar:4fe4288d] (scar)
-    why: fix: language persistence bug — back button + ac_lang/alphaclaw_lang sync
-    your change touched lines 20-20
+  <file>:<lines>  [scar:<short-sha>] (scar)
+    why: <original fix commit subject>
+    your change touched lines <range>
 husky - pre-commit script failed (code 1)
 ```
 
-HEAD remained at `9ec186fe`. Protection verified working end-to-end
+HEAD remained unchanged. Protection verified working end-to-end
 through the real Husky + ESLint + fixguard chain on a real
 production project.
 
@@ -1055,8 +1054,8 @@ production project.
 - **Self-application on your own repo is not enough.** §12.1 tested
   fixguard on fixguard's own repo, which has no Husky. The entire
   class of "tracked-file-modification-lost-on-stash" bugs was
-  invisible until a Husky project was used. Future validation must
-  include at least one Husky project.
+  invisible until a Husky-using project was used as the target.
+  Future validation must include at least one Husky project.
 - **The install step output is the LAST chance to tell the user
   about deployment traps.** If the warning is only in README, many
   users will never see it. The warning now appears unconditionally

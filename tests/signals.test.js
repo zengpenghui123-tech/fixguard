@@ -138,24 +138,25 @@ test('scoreCommit: pure feat without fix gets nothing', () => {
   assert.ok(score < SCAR_THRESHOLD);
 });
 
-// ─── REGRESSION: AlphaClaw "feat: Sentry monitoring..." false positive ──
-// This was a feat commit with a sub-bullet "fix free-count route" that
-// scored 0.55 with the original heuristic and contributed 174 scars.
+// ─── REGRESSION: feat-with-inline-fix false positive ──
+// A real feat commit observed during live validation had a
+// sub-bullet "fix: quota edge case" and scored 0.55 with the
+// original heuristic, contributing 174 false-positive scars.
 // The combined mixed+large penalty must filter it out.
 test('scoreCommit: large feat-with-sub-fix is filtered by combined penalty', () => {
   const commit = {
     sha: 'a',
     date: '2026-04-02T03:00:00Z',
-    subject: 'feat: Sentry monitoring, unit tests, render.js modularization, fix free-count route',
-    filesChanged: ['static/index.js', 'tests/sentry.test.js', 'package.json', 'routes/api.js'],
+    subject: 'feat: metrics collector, unit tests, module extraction, fix quota edge case',
+    filesChanged: ['src/core/engine.js', 'tests/metrics.test.js', 'package.json', 'src/api/routes.js'],
     linesAdded: 600,
     linesDeleted: 200,
     addedLines: [
-      'function initSentry() {',
-      '  Sentry.init({',
-      '    dsn: process.env.SENTRY_DSN,',
+      'function initMetrics() {',
+      '  metrics.init({',
+      '    dsn: process.env.METRICS_DSN,',
       '  });',
-      '  if (!window.sentryReady) throw new Error("not ready");',
+      '  if (!metrics.ready) throw new Error("not ready");',
       '}',
     ],
   };

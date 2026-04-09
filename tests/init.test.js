@@ -1,8 +1,9 @@
 // Tests for init.js — specifically the Husky detection path.
-// Discovered during self-validation on an AlphaClaw test copy on 2026-04-09:
-// initial version of installGitHook wrote to .git/hooks/pre-commit but
-// Husky-using projects set core.hooksPath=.husky/_ which made git ignore
-// the default location entirely. These tests lock in the fix.
+// Discovered during live validation on a real Husky-based production
+// project on 2026-04-09: initial version of installGitHook wrote to
+// .git/hooks/pre-commit but Husky-using projects set
+// core.hooksPath=.husky/_ which made git ignore the default location
+// entirely. These tests lock in the fix.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');

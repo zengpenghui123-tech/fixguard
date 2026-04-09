@@ -5,7 +5,7 @@
 // correct for a library-style CLI, but it exposes a real trap: on Husky
 // projects, the user MUST commit the .husky/pre-commit modification
 // immediately or it gets lost on the next `git stash`. This trap was
-// discovered in live validation on AlphaClaw (DESIGN.md §12.2) and is
+// discovered during live validation on a Husky-based production project (DESIGN.md §12.2) and is
 // exactly the kind of silent-failure that the whole project exists to
 // prevent.
 //
