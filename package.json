@@ -1,9 +1,9 @@
 {
-  "name": "fixguard",
-  "version": "0.1.0",
+  "name": "fixguard-cli",
+  "version": "1.1.0",
   "description": "Stop AI coding assistants from silently reverting your hard-won bug fixes",
   "bin": {
-    "fixguard": "./src/cli.js"
+    "fixguard": "src/cli.js"
   },
   "files": [
     "src",
