@@ -6,6 +6,16 @@ const path = require('path');
 const DEFAULTS = {
   // Extra file patterns the user wants to skip (in addition to built-ins)
   ignore: [],
+  // Regex source (no anchors, no flags) matching "this commit is a bug fix".
+  // Used by both `git log --grep` and the multi-signal scorer. Default set
+  // covers common English conventions; override in .fixguardrc.json if your
+  // team writes commits in another language:
+  //   "fixKeywords": "fix|bug|hotfix|修复|修正|バグ修正|correction|behoben"
+  // The regex is applied with \b word-boundaries and case-insensitive.
+  // Word-boundary works for Latin scripts; for CJK, boundaries are
+  // effectively ignored (Unicode property matching), so the keywords still
+  // match inline substrings like "修复登录bug" → contains "修复".
+  fixKeywords: 'fix|bug|hotfix|patch|crash|broken|incident|emergency|regression|issue',
   // Scar confidence threshold. Lower = more sensitive (more scars, maybe noisier).
   scarThreshold: 0.50,
   // How many git blame processes to run in parallel during a scan

@@ -5,6 +5,7 @@ const {
   diffShapeScore,
   isUnusualTime,
   hasRecentRevert,
+  buildFixRegex,
   SCAR_THRESHOLD,
 } = require('../src/signals');
 
@@ -213,6 +214,109 @@ test('scoreCommit: commits without new-file breakdown fall back to total delta',
   };
   const { signals } = scoreCommit(commit, [commit]);
   assert.equal(signals.smallDiff, 0.15);
+});
+
+// ── buildFixRegex: Latin-boundary helper for non-English support ─
+test('buildFixRegex: English "fix" matches inside "fix: jwt"', () => {
+  const re = buildFixRegex('fix|bug');
+  assert.ok(re.test('fix: jwt iat bypass'));
+});
+
+test('buildFixRegex: English "fix" does NOT match inside "prefix"', () => {
+  const re = buildFixRegex('fix|bug');
+  assert.ok(!re.test('prefix refactor'));
+});
+
+test('buildFixRegex: Chinese "修复" matches inside "修复登录bug"', () => {
+  const re = buildFixRegex('修复|修正');
+  assert.ok(re.test('修复登录bug'));
+});
+
+test('buildFixRegex: Japanese "バグ修正" matches inside full sentence', () => {
+  const re = buildFixRegex('バグ修正|修正');
+  assert.ok(re.test('バグ修正: ログインフォームの null チェック'));
+});
+
+test('buildFixRegex: Korean "버그" matches with space neighbors', () => {
+  const re = buildFixRegex('버그|수정');
+  assert.ok(re.test('버그 수정: 로그인 문제'));
+});
+
+test('buildFixRegex: mixing English and CJK in one pattern', () => {
+  const re = buildFixRegex('fix|bug|修复|バグ修正|Fehler');
+  assert.ok(re.test('fix: something'));
+  assert.ok(re.test('修复登录'));
+  assert.ok(re.test('バグ修正'));
+  assert.ok(re.test('Fehler behoben'));
+  assert.ok(!re.test('prefix only'));
+  assert.ok(!re.test('no keyword here'));
+});
+
+// ── i18n: custom fix-keyword regex lets non-English teams work ───
+// Discovered as a silent-failure mode on 2026-04-09 discussion: the
+// default English regex fails entirely on Chinese / Japanese / German
+// commit messages. These tests lock in the opts.fixKeywords override
+// path so non-English teams can use fixguard without forking it.
+test('scoreCommit: Chinese commit matches custom Chinese fixKeywords regex', () => {
+  const customRe = buildFixRegex('fix|bug|修复|修正');
+  const commit = {
+    sha: 'a', date: '2026-04-08T14:00:00Z',
+    subject: '修复登录页面的 race condition',
+    filesChanged: ['src/auth.js', 'tests/auth.test.js'],
+    modifiedLinesAdded: 5, modifiedLinesDeleted: 2, newFileLinesAdded: 0,
+    linesAdded: 5, linesDeleted: 2,
+    addedLines: ['  if (!token) throw new Error("no token")'],
+  };
+  const { score, signals } = scoreCommit(commit, [commit], { fixKeywords: customRe });
+  assert.ok(signals.cleanFixKeyword === 0.40, 'Chinese "修复" must match custom regex');
+  assert.ok(signals.smallDiff === 0.15);
+  assert.ok(signals.testCoChange === 0.15);
+  assert.ok(score >= SCAR_THRESHOLD);
+});
+
+test('scoreCommit: Chinese commit does NOT match default English-only regex', () => {
+  const commit = {
+    sha: 'a', date: '2026-04-08T14:00:00Z',
+    subject: '修复登录页面的 race condition',
+    filesChanged: ['src/auth.js'],
+    modifiedLinesAdded: 5, modifiedLinesDeleted: 2, newFileLinesAdded: 0,
+    linesAdded: 5, linesDeleted: 2,
+    addedLines: ['  if (!token) throw new Error("no token")'],
+  };
+  const { signals } = scoreCommit(commit, [commit]); // no opts → default English regex
+  assert.ok(!signals.cleanFixKeyword, 'default regex must not match Chinese-only subject');
+  assert.ok(!signals.mixedFixKeyword);
+  assert.ok(!signals.dirtyFixKeyword);
+});
+
+test('scoreCommit: custom regex with fallback English still matches English commits', () => {
+  // Union pattern: user keeps English defaults AND adds their language
+  const customRe = buildFixRegex('fix|bug|hotfix|修复|修正|バグ修正');
+  const commit = {
+    sha: 'a', date: '2026-04-08T14:00:00Z',
+    subject: 'fix: english still works',
+    filesChanged: ['src/a.js'],
+    modifiedLinesAdded: 3, modifiedLinesDeleted: 0, newFileLinesAdded: 0,
+    linesAdded: 3, linesDeleted: 0,
+    addedLines: ['  if (!x) throw new Error("bad")'],
+  };
+  const { signals } = scoreCommit(commit, [commit], { fixKeywords: customRe });
+  assert.ok(signals.cleanFixKeyword === 0.40);
+});
+
+test('scoreCommit: Japanese "バグ修正" matches when configured', () => {
+  const customRe = buildFixRegex('fix|バグ修正|修正');
+  const commit = {
+    sha: 'a', date: '2026-04-08T14:00:00Z',
+    subject: 'バグ修正: ログインフォームの null チェック',
+    filesChanged: ['src/auth.js', 'tests/auth.test.js'],
+    modifiedLinesAdded: 4, modifiedLinesDeleted: 0, newFileLinesAdded: 0,
+    linesAdded: 4, linesDeleted: 0,
+    addedLines: ['  if (!user) return null;'],
+  };
+  const { signals, score } = scoreCommit(commit, [commit], { fixKeywords: customRe });
+  assert.ok(signals.cleanFixKeyword === 0.40);
+  assert.ok(score >= SCAR_THRESHOLD);
 });
 
 // Make sure the combined penalty does NOT affect clean large fixes

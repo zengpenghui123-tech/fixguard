@@ -7,7 +7,7 @@ const { execSync, exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
-const { scoreCommit, SCAR_THRESHOLD, FIX_KEYWORDS_SOURCE } = require('./signals');
+const { scoreCommit, SCAR_THRESHOLD, FIX_KEYWORDS_SOURCE, buildFixRegex } = require('./signals');
 const { loadConfig } = require('./config');
 const { appendEvent } = require('./events');
 
@@ -144,12 +144,19 @@ function analyzeAllCommits(cwd, opts = {}) {
   // commits to see if a revert happened in a window before each candidate).
   const allCommits = listAllCommits(cwd);
 
+  // Load user-configured fix-keyword regex from .fixguardrc.json with
+  // English default fallback. This is what makes fixguard usable for
+  // Chinese / Japanese / German / any-language teams without code changes.
+  // buildFixRegex handles non-ASCII word boundaries correctly (see signals.js).
+  const cfg = loadConfig(cwd);
+  const fixKeywordsSource = cfg.fixKeywords || FIX_KEYWORDS_SOURCE;
+  const customFixKeywords = buildFixRegex(fixKeywordsSource);
+
   // Single expensive call: git log -p, filtered server-side to fix-keyword
   // commits only. A unique sentinel starts each record so we can split
   // reliably even when subjects contain tabs/newlines.
   const SENTINEL = '___FXG_CMT___';
-  // Single source of truth: same pattern signals.js uses for FIX_KEYWORDS.
-  const grepRegex = FIX_KEYWORDS_SOURCE;
+  const grepRegex = fixKeywordsSource;
   let raw;
   try {
     raw = git(
@@ -193,10 +200,14 @@ function analyzeAllCommits(cwd, opts = {}) {
       addedLines: diffStats.addedLines,
     };
 
-    const { score, signals } = scoreCommit(commit, allCommits);
+    // Pass the user-configured fix regex so scoreCommit evaluates subjects
+    // in the team's language, not just English.
+    const { score, signals } = scoreCommit(commit, allCommits, {
+      fixKeywords: customFixKeywords,
+    });
     analyzed++;
     // Honor user-configured threshold (defaults to SCAR_THRESHOLD)
-    const threshold = loadConfig(cwd).scarThreshold;
+    const threshold = cfg.scarThreshold;
     if (score >= threshold) {
       scarCommits.set(sha, { subject, date, score, signals });
     }
@@ -420,12 +431,47 @@ const BOLD = s => `\x1b[1m${s}\x1b[0m`;
 
 // CLI handler: `fixguard scars`
 async function scarsCommand(cwd) {
+  const scarMapExisted = fs.existsSync(path.join(cwd, '.fixguard', 'scars.json'));
   const result = await detectScars(cwd);
   const { scars, fixCommitCount, scannedFiles } = result;
   console.log(`fixguard: scanned ${scannedFiles} file(s), ${fixCommitCount} fix-commit(s) → ${BOLD(scars.length)} scar region(s)`);
   if (scars.length === 0) {
     if (fixCommitCount === 0) {
-      console.log(DIM('  no commits matched fix-keywords. either this is a young repo, or your team uses different commit conventions.'));
+      // This is the most dangerous silent-failure mode: fixguard returned
+      // "success" with 0 protection, and the user assumes the tool simply
+      // has nothing to protect. Print a LOUD, specific diagnostic so the
+      // real cause (non-English commit language / unusual conventions) is
+      // visible instead of silent.
+      const cfg = loadConfig(cwd);
+      const currentKeywords = cfg.fixKeywords || FIX_KEYWORDS_SOURCE;
+      const YEL = s => `\x1b[33m${s}\x1b[0m`;
+      console.log('');
+      console.log(YEL(`  ⚠ 0 commits matched any fix-keyword in this repo.`));
+      console.log('');
+      console.log(`  The most likely causes, in order:`);
+      console.log('');
+      console.log(`  ${BOLD('1. Your team writes commit messages in a non-English language.')}`);
+      console.log(`     Current keywords: ${DIM(currentKeywords)}`);
+      console.log('');
+      console.log(`     If your commits look like 修复登录bug / バグ修正 / Fehler behoben /`);
+      console.log(`     correction / corrección  — add your language's keywords to`);
+      console.log(`     ${BOLD('.fixguardrc.json')}:`);
+      console.log('');
+      console.log(DIM(`       {`));
+      console.log(DIM(`         "fixKeywords": "fix|bug|hotfix|修复|修正|バグ修正|correction|behoben"`));
+      console.log(DIM(`       }`));
+      console.log('');
+      console.log(`     Then rerun ${BOLD('fixguard scars')}.`);
+      console.log('');
+      console.log(`  ${BOLD('2. Your team uses unusual commit conventions.')}`);
+      console.log(`     A commit like "${DIM('🐛 edge case on safari')}" won't match because it has`);
+      console.log(`     no English fix-keyword. Either add your emoji/style to fixKeywords,`);
+      console.log(`     or adopt conventional commits (${DIM('fix: ...')}) going forward.`);
+      console.log('');
+      console.log(`  ${BOLD('3. This is a genuinely young repo with no bug-fix history yet.')}`);
+      console.log(`     fixguard only protects code that was added in past fix commits.`);
+      console.log(`     Come back after you fix a few real bugs.`);
+      console.log('');
     }
     return;
   }
@@ -457,6 +503,38 @@ async function scarsCommand(cwd) {
   });
   console.log('');
   console.log(DIM(`  → ${path.relative(cwd, outPath)}`));
+
+  // ─── Plain-language summary (first-run friendly) ────────────────
+  // Anyone reading this for the first time deserves a sentence of
+  // "what does '573 scar regions' actually mean for my project."
+  console.log('');
+  console.log(BOLD('What this means:'));
+  console.log(`  Your git history has ${fixCommitCount} commits that look like real bug fixes.`);
+  console.log(`  Those fixes added ${scars.length} lines (or line-ranges) of code that are now ${BOLD('protected')}.`);
+  console.log(`  If an AI (or a human) tries to delete or rewrite any of those lines, fixguard will intervene.`);
+
+  // Pick one concrete example to show what "protected" feels like
+  const topFile = sorted[0];
+  if (topFile) {
+    const [file, list] = topFile;
+    const example = list[0];
+    console.log('');
+    console.log(`  ${BOLD('Example:')} ${file}  line ${example.startLine}`);
+    console.log(`  was added in commit ${example.sha} with the message:`);
+    console.log(`    "${example.story}"`);
+    console.log(`  From now on, any Claude Code session trying to delete that line will be blocked`);
+    console.log(`  with a reminder of why it exists.`);
+  }
+
+  console.log('');
+  console.log(BOLD('Next steps:'));
+  console.log(`  ${DIM('·')} Run ${BOLD('fixguard status')}            — see the full protection dashboard`);
+  console.log(`  ${DIM('·')} Run ${BOLD('fixguard explain <file>')}    — see all scars in one file with explanations`);
+  console.log(`  ${DIM('·')} Run ${BOLD('fixguard events')}            — see what fixguard has done recently`);
+  if (!scarMapExisted) {
+    console.log('');
+    console.log(DIM(`  (This is your first scan. Re-run \`fixguard scars\` anytime you've added new fix commits.)`));
+  }
 }
 
 module.exports = {

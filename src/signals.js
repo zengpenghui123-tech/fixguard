@@ -12,7 +12,23 @@
 // the CLI's commit pre-filter and the scoring engine's keyword check can
 // never drift apart.
 const FIX_KEYWORDS_SOURCE = 'fix|bug|hotfix|patch|crash|broken|incident|emergency|regression|issue';
-const FIX_KEYWORDS  = new RegExp(`\\b(${FIX_KEYWORDS_SOURCE})\\b`, 'i');
+
+// Build a fix-keyword regex with Latin-letter boundaries instead of \b.
+// Rationale: JavaScript's \b only recognizes ASCII word characters, so
+// `\b修复\b` does NOT match in "修复登录bug" (because 修 and 登 are
+// both \W in ASCII terms, leaving no boundary between them).
+// Using (?<![A-Za-z]) and (?![A-Za-z]) means:
+//   · English "fix" still won't match "prefix" (e is A-Za-z)
+//   · Chinese "修复" matches "修复登录bug" (登 is not A-Za-z)
+//   · Japanese "バグ修正" matches "バグ修正のため" (の is not A-Za-z)
+//   · Korean "버그" matches "버그 수정" (space is not A-Za-z)
+// This is the single change that makes fixguard work for non-English
+// teams without them needing to fork the tool.
+function buildFixRegex(source) {
+  return new RegExp(`(?<![A-Za-z])(?:${source})(?![A-Za-z])`, 'i');
+}
+
+const FIX_KEYWORDS  = buildFixRegex(FIX_KEYWORDS_SOURCE);
 const REVERT_KEYWORDS = /\b(revert|rollback|undo)\b/i;
 const NOISE_KEYWORDS = /\b(typo|lint|format|style|indent|whitespace|rename|cleanup|chore|comment|docs?)\b/i;
 const MIXED_KEYWORDS = /\b(feat|feature|refactor|wip|merge)\b/i;
@@ -118,10 +134,18 @@ function hasRecentRevert(commit, allCommitsByDate, daysWindow = 7) {
  * Score one commit. Returns:
  *   { score, signals: { name: contribution, ... } }
  */
-function scoreCommit(commit, allCommits) {
+function scoreCommit(commit, allCommits, opts = {}) {
   const subject = commit.subject || '';
   const filesChanged = commit.filesChanged || [];
   const addedLines = commit.addedLines || [];
+
+  // Allow caller (scars.js) to override the fix-keyword regex with a
+  // user-configured one from .fixguardrc.json. Default is the English
+  // set baked into signals.js. Noise and mixed keywords stay English
+  // because "typo/lint/feat/refactor" are conventions that tend to
+  // survive translation — they are the words ENGLISH-speaking code
+  // reviews adopted, and non-English teams often use them verbatim.
+  const fixRe = opts.fixKeywords instanceof RegExp ? opts.fixKeywords : FIX_KEYWORDS;
 
   // Prefer the modification-only delta when a new-file breakdown is
   // available. This prevents a legitimate fix that also adds a
@@ -137,7 +161,7 @@ function scoreCommit(commit, allCommits) {
   const signals = {};
 
   // ── Subject signals ────────────────────────────────────────────────
-  const hasFix    = FIX_KEYWORDS.test(subject);
+  const hasFix    = fixRe.test(subject);
   const hasNoise  = NOISE_KEYWORDS.test(subject);
   const hasMixed  = MIXED_KEYWORDS.test(subject);
 
@@ -205,6 +229,7 @@ module.exports = {
   diffShapeScore,
   isUnusualTime,
   hasRecentRevert,
+  buildFixRegex,
   SCAR_THRESHOLD,
   FIX_KEYWORDS,
   FIX_KEYWORDS_SOURCE,

@@ -266,6 +266,7 @@ Every field is optional:
 
 ```json
 {
+  "fixKeywords": "fix|bug|hotfix|修复|修正|バグ修正|correction|behoben",
   "ignore": ["legacy/**", "vendor/**", "*.pb.go"],
   "scarThreshold": 0.50,
   "blameConcurrency": 8,
@@ -275,6 +276,65 @@ Every field is optional:
   "sessionCacheTtlDays": 7
 }
 ```
+
+### Non-English commit messages
+
+By default, fixguard recognizes these English fix-keywords:
+
+```
+fix | bug | hotfix | patch | crash | broken | incident | emergency |
+regression | issue
+```
+
+If your team writes commits in a different language, fixguard will scan
+successfully but find **zero** fix commits — a silent failure mode. In that
+case `fixguard scars` prints a loud yellow warning explaining the cause, and
+asks you to extend `fixKeywords` in `.fixguardrc.json`. Examples:
+
+| Language | Suggested keyword addition |
+|---|---|
+| 中文 (Chinese) | `修复\|修正\|修复bug\|补丁\|紧急修复` |
+| 日本語 (Japanese) | `バグ修正\|修正\|不具合修正\|緊急修正` |
+| 한국어 (Korean) | `버그\|수정\|버그수정\|핫픽스` |
+| Deutsch (German) | `Fehler\|behoben\|Fehlerbehebung\|Hotfix` |
+| Français (French) | `correction\|correctif\|bogue\|erreur` |
+| Español (Spanish) | `corrección\|corregir\|fallo\|error` |
+
+Mix your language with the English defaults using `|`:
+
+```json
+{
+  "fixKeywords": "fix|bug|hotfix|修复|修正|バグ修正|Fehler|correction"
+}
+```
+
+fixguard handles CJK word boundaries correctly — `修复` will match inside
+`修复登录bug` without needing spaces around it.
+
+## Works well for / needs tuning for
+
+fixguard is built on assumptions about git history and commit conventions.
+Be honest about what works out of the box vs what requires tuning:
+
+**Works well out of the box:**
+- Projects with English `fix:` conventional commits
+- JavaScript / TypeScript / Python / Go / Rust / Java codebases
+- Projects using Husky (`fixguard bootstrap` auto-detects and commits)
+- Repos with at least a few months of history and real bug fixes
+
+**Needs `.fixguardrc.json` tuning:**
+- Non-English commit messages (set `fixKeywords`)
+- Custom generated-file directories (set `ignore`)
+- Very large diffs that are actually fixes (lower `scarThreshold` to 0.40)
+- Projects with hundreds of scars per file (raise `maxScarsPerInjection`)
+
+**Doesn't work yet (future work):**
+- HTML/CSS-only projects (no guard clause shapes to detect)
+- SQL migration files (no code shape signals)
+- Projects with fully squash-merged history (PR titles mask the fix keywords)
+- Monorepos where generated dirs live in `packages/*/dist/` (the default
+  ignore patterns assume top-level `dist/`)
+- Repos with < 10 commits (not enough signal to score commits usefully)
 
 ## Performance
 
