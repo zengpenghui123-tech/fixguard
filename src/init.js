@@ -96,9 +96,14 @@ function resolvePreCommitPath(cwd) {
   return { path: path.join(gitDir, 'hooks', 'pre-commit'), kind: 'default' };
 }
 
+// Returns { kind, path, alreadyInstalled, isTracked } so init() can decide
+// whether to print the "you must git-commit this change" warning — only
+// Husky and custom-hooks-path installs write to tracked files; the
+// default .git/hooks/pre-commit is not tracked and needs no warning.
 function installGitHook(cwd) {
   const resolved = resolvePreCommitPath(cwd);
   const hookPath = resolved.path;
+  const isTracked = resolved.kind === 'husky' || resolved.kind === 'custom';
   fs.mkdirSync(path.dirname(hookPath), { recursive: true });
 
   // Build the fixguard-check line we need to inject
@@ -109,7 +114,7 @@ function installGitHook(cwd) {
     const existing = fs.readFileSync(hookPath, 'utf8');
     if (existing.includes(HOOK_MARKER)) {
       console.log(`fixguard: pre-commit hook already installed (${resolved.kind}).`);
-      return;
+      return { ...resolved, alreadyInstalled: true, isTracked };
     }
     // Existing hook — append fixguard check at the end. Husky and other
     // hook chains run top-to-bottom; appending means we run after their
@@ -121,7 +126,7 @@ function installGitHook(cwd) {
     try { fs.chmodSync(hookPath, 0o755); } catch { /* windows */ }
     const where = path.relative(cwd, hookPath);
     console.log(`fixguard: appended check to existing ${resolved.kind} pre-commit hook → ${where}`);
-    return;
+    return { ...resolved, alreadyInstalled: false, isTracked, modified: true };
   }
 
   // No existing hook — create a fresh one using the standard template
@@ -129,6 +134,7 @@ function installGitHook(cwd) {
   try { fs.chmodSync(hookPath, 0o755); } catch { /* windows */ }
   const where = path.relative(cwd, hookPath);
   console.log(`fixguard: installed ${resolved.kind} pre-commit hook → ${where}`);
+  return { ...resolved, alreadyInstalled: false, isTracked, modified: true };
 }
 
 // Merge fixguard's Claude Code hook entry into the project's .claude/settings.json
@@ -179,7 +185,7 @@ function installClaudeCodeHook(cwd) {
 }
 
 async function init(cwd) {
-  installGitHook(cwd);
+  const gitHook = installGitHook(cwd);
   installClaudeCodeHook(cwd);
 
   // Drop a sample .fixguardrc.json if missing
@@ -189,7 +195,34 @@ async function init(cwd) {
     console.log('fixguard: wrote .fixguardrc.json');
   }
 
-  console.log('');
+  // ─── CRITICAL WARNING when we modified a tracked file ────────────
+  // If the project uses Husky (or any custom core.hooksPath), the
+  // pre-commit hook lives in a git-tracked file. That means our
+  // modification is in the user's working tree, NOT committed. The
+  // next `git stash` / `git checkout` / `git reset` / branch switch
+  // will silently revert it and fixguard protection vanishes without
+  // any warning. We MUST tell the user to commit the change.
+  //
+  // This was discovered during live validation on an AlphaClaw project
+  // on 2026-04-09: the first commit attempt appeared to succeed because
+  // a prior `git stash` had already erased the fixguard line from
+  // .husky/pre-commit without anyone noticing. See DESIGN.md §12.2.
+  if (gitHook && gitHook.isTracked && gitHook.modified) {
+    const hookRel = path.relative(cwd, gitHook.path).replace(/\\/g, '/');
+    console.log('');
+    console.log('\x1b[33m⚠ IMPORTANT — commit the hook change, or you will lose it:\x1b[0m');
+    console.log('');
+    console.log(`  fixguard modified a tracked file: \x1b[1m${hookRel}\x1b[0m`);
+    console.log(`  If you do not commit this change, any git stash / checkout /`);
+    console.log(`  rebase / branch switch will silently revert it, and fixguard`);
+    console.log(`  protection will vanish without warning.`);
+    console.log('');
+    console.log('  Run these two commands now:');
+    console.log(`    \x1b[1mgit add ${hookRel}\x1b[0m`);
+    console.log(`    \x1b[1mgit commit -m "chore: install fixguard pre-commit hook"\x1b[0m`);
+    console.log('');
+  }
+
   console.log('Next steps:');
   console.log('  1. Run `fixguard scars` to auto-detect scars from git history');
   console.log('  2. (Optional) Add `// @fix [tag] "reason"` markers for anything git history does not cover');

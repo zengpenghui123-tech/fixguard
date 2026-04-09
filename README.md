@@ -4,6 +4,77 @@
 > Zero manual marking. Zero human triage. The tool learns from your git
 > history and your AI's behaviour, automatically.
 
+## Try it in 60 seconds
+
+If you've never used fixguard before, here's the shortest possible walkthrough.
+Everything writes to a local `.fixguard/` directory — your source code is never
+modified.
+
+```bash
+cd your-project                   # any git repo with some "fix:" commits in it
+fixguard init                     # installs two hooks: git pre-commit + Claude Code
+```
+
+> **⚠ Husky users: commit the hook change immediately.** If your project uses
+> Husky, fixguard appends its check to `.husky/pre-commit`, which is a
+> git-tracked file. If you don't commit that change, the next `git stash` /
+> `git checkout` / rebase will silently revert it and protection vanishes
+> without warning. Run this right after `fixguard init`:
+>
+> ```bash
+> git add .husky/pre-commit
+> git commit -m "chore: install fixguard pre-commit hook"
+> ```
+>
+> Projects without Husky don't need this — `fixguard init` writes to
+> `.git/hooks/pre-commit` which isn't tracked by git and is stable on its own.
+
+```bash
+fixguard scars                    # looks at git history, finds real bug fixes
+```
+
+You should see something like:
+
+```
+fixguard: scanned 197 file(s), 274 fix-commit(s) → 573 scar region(s)
+
+Top scarred files:
+  static/index.js  (149 scars)
+  routes/chat.js   (52 scars)
+  ...
+
+What this means:
+  Your git history has 274 commits that look like real bug fixes.
+  Those fixes added 573 lines of code that are now protected.
+  If an AI (or a human) tries to delete any of those lines, fixguard will intervene.
+
+  Example: static/settings.js line 20
+  was added in commit 4fe4288 with the message:
+    "fix: language persistence bug - back button + ac_lang/alphaclaw_lang sync"
+  From now on, any Claude Code session trying to delete that line will be blocked.
+```
+
+**That's the whole pitch**: those 573 lines are the places your team bled for.
+fixguard now protects them from silent AI overwrites.
+
+Want to see what's protected in a specific file?
+
+```bash
+fixguard explain src/auth.js
+```
+
+Want to see the overall health?
+
+```bash
+fixguard status
+```
+
+That's it. You're done. From now on any Claude Code session in this directory
+reads a scar warning before editing, and any attempt to delete a scarred line
+gets blocked with a reference to the original commit that introduced it.
+
+---
+
 ## The problem
 
 You spent four hours tracking down a subtle race condition. You fixed it.

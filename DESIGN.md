@@ -946,7 +946,136 @@ ca2bd9f fix: archived scars leaked into commit-time check
 37e8f5c init: fixguard project scaffold
 ```
 
-Future self-application events should be appended as §12.2, §12.3, etc.
-Each entry should answer: what was tried, what broke, what the fix was,
-and what the final state looked like. This log is a memory the project
-keeps about itself.
+### 12.2 2026-04-09 — live validation on a real Husky project (AlphaClaw)
+
+**Event:** fixguard graduated from its own repo (§12.1) to a real
+third-party project for the first time.
+
+**Context:** After the learning ring was complete and 87 tests were
+green, the question became "does this actually work on a real project
+I don't control?" AlphaClaw, a 254 MB production web app that uses
+Husky + ESLint in its pre-commit chain, was the target. A full backup
+(`alphaclaw-website-backup-20260409`) was taken first.
+
+**What happened:**
+
+1. `fixguard init` on the live AlphaClaw directory. It correctly
+   detected Husky via `core.hooksPath=.husky/_`, appended its check
+   line to the **outer** `.husky/pre-commit` (not the `_/pre-commit`
+   bootstrap wrapper), and created `.claude/settings.json` and
+   `.fixguardrc.json`.
+
+2. `fixguard scars` ran in 7.6 seconds and found 573 protected
+   regions across 197 files, headSha matching current HEAD. Top
+   scarred files all matched the user's own memory of which files
+   he had bled on: `static/index.js` (149), `routes/chat.js`,
+   `routes/auth.js`, `static/settings.js`.
+
+3. `fixguard status` confirmed `✓ healthy`, 0 archived, blood log
+   initialized.
+
+4. **End-to-end commit-block test:** modified
+   `static/settings.js:20-23` (a real scar — the "language
+   persistence fix — back button" commit from `4fe4288d`), staged
+   it, and ran `git commit -m "refactor: simplify settings.js"`.
+
+5. **The commit went through.** Exit 0. HEAD advanced. No fixguard
+   output anywhere in the hook chain.
+
+**Root cause analysis:**
+
+The test methodology was to `git stash push -u` BEFORE modifying
+the scarred file, to protect the user's in-progress work. But `.husky/pre-commit`
+was ALSO modified by the earlier `fixguard init` — and that
+modification lived in the working tree, not in git history. `git
+stash` saved the working-tree version to the stash and **reverted
+the file to its HEAD state**, which had no fixguard line. The commit
+then ran against the un-fixguarded hook chain and went through.
+
+When `git stash pop` was run after the commit to restore the
+working tree, the stash applied cleanly but the damage was already
+done: an unprotected commit had entered the history of a production
+repository.
+
+**The bug was not in fixguard's code.** Every unit test still
+passed. The bug was in the **deployment contract**: fixguard
+silently modifies a git-tracked file (`.husky/pre-commit` for Husky
+projects) and does not tell the user that this modification is
+ephemeral until committed.
+
+**Recovery:**
+
+- `git reset --soft HEAD~1` rewound the bad commit (hard reset
+  failed because SQLite WAL files were locked).
+- `git restore --staged` unstaged the violation.
+- `git checkout -- static/settings.js` restored the original.
+- AlphaClaw's HEAD returned to `9ec186fe` with zero lost work.
+- `git stash drop` removed the temporary validation stash, leaving
+  the user's two pre-existing stashes untouched.
+
+**Fix applied:**
+
+1. `installGitHook` in `init.js` now returns metadata including
+   `isTracked` (true for Husky and custom hooks-path installs,
+   false for the default `.git/hooks/pre-commit`).
+2. `init()` in `init.js` checks this flag and prints a **prominent
+   yellow warning** immediately after install when the hook lives
+   in a tracked file, telling the user to run `git add
+   .husky/pre-commit && git commit` right away.
+3. `README.md` Quick Start now has a callout block for Husky users
+   with the exact two commands to run.
+4. This section (DESIGN.md §12.2) exists.
+
+**Re-validation:**
+
+After the fix, the same modification-of-a-scar test was repeated
+on live AlphaClaw **without the intermediate stash**. The commit
+was correctly blocked:
+
+```
+✗ fixguard: 1 protected region(s) touched
+  static/settings.js:20-23  [scar:4fe4288d] (scar)
+    why: fix: language persistence bug — back button + ac_lang/alphaclaw_lang sync
+    your change touched lines 20-20
+husky - pre-commit script failed (code 1)
+```
+
+HEAD remained at `9ec186fe`. Protection verified working end-to-end
+through the real Husky + ESLint + fixguard chain on a real
+production project.
+
+**Lessons encoded:**
+
+- **Fixguard modifies tracked files. Tracked-file modifications
+  must be committed to persist.** This is obvious in hindsight but
+  was not explicit anywhere before this incident.
+- **Any test methodology that stashes before exercising the hook
+  chain is broken by definition** — stashing hides the very
+  modification being tested.
+- **Self-application on your own repo is not enough.** §12.1 tested
+  fixguard on fixguard's own repo, which has no Husky. The entire
+  class of "tracked-file-modification-lost-on-stash" bugs was
+  invisible until a Husky project was used. Future validation must
+  include at least one Husky project.
+- **The install step output is the LAST chance to tell the user
+  about deployment traps.** If the warning is only in README, many
+  users will never see it. The warning now appears unconditionally
+  in the `fixguard init` output whenever a tracked hook file was
+  modified.
+
+**Commits of record from this event:**
+
+```
+<next commit>  fix: warn users to commit tracked hook modifications
+                    after fixguard init + DESIGN.md §12.2
+                    + README Husky callout
+```
+
+### Future self-application entries
+
+Future self-application events should be appended as §12.3, §12.4,
+etc. Each entry should answer: what was tried, what broke, what the
+fix was, and what the final state looked like. This log is a memory
+the project keeps about itself — the failures matter more than the
+successes, because the failures are what's teaching the system
+how to deploy safely.
