@@ -1,8 +1,12 @@
 # fixguard
 
-> Stop AI coding assistants from silently reverting your hard-won bug fixes.
-> Zero manual marking. Zero human triage. The tool learns from your git
-> history and your AI's behaviour, automatically.
+**You spent 4 hours fixing a JWT validation bug. Three weeks later, Claude Code "refactors" the file and silently removes your fix. Production breaks again.**
+
+fixguard stops this. It scans your git history, finds every line added in a real bug fix, and prevents AI tools from deleting them. Zero config. Zero manual marking.
+
+<p align="center">
+  <img src="docs/before-after.png" alt="Without fixguard vs With fixguard" width="700">
+</p>
 
 ## Try it in 60 seconds
 
@@ -127,10 +131,6 @@ and 1 production incident.
 
 **fixguard finds every scar in your git history and makes sure no AI can
 silently remove them.**
-
-<p align="center">
-  <img src="docs/before-after.png" alt="Without fixguard vs With fixguard" width="700">
-</p>
 
 <p align="center">
   <img src="docs/architecture.png" alt="fixguard architecture — three rings" width="500">
